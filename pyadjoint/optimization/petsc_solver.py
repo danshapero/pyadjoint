@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from .optimization_solver import OptimizationSolver
 from ..tape import no_annotations
 
@@ -27,17 +28,15 @@ try:
         def __init__(self, problem, parameters):
             OptimizationSolver.__init__(self, problem, parameters)
             self._petsc_objective = PETScObjective(problem.reduced_functional)
-            x = [p.tape_value() for p in problem.reduced_functional.controls]
-            # Now we're probably going to want to use `PETSc.Vec().createNest`
 
-            # TODO: Make the communicator adjustable
+            # FIXME: Make the communicator adjustable
             comm = PETSc.COMM_SELF
 
-            #size = ?
-
-            x = PETSc.Vec().create(comm)
-            x.setSizes(size)
-            x.setFromOptions()
+            ps = [p.tape_value() for p in problem.reduced_functional.controls]
+            with ExitStack() as stack:
+                # FIXME: This is specific to Firedrake probably
+                vecs = [stack.enter_context(p.dat.vec_ro) for in ps]
+                x = PETSc.Vec().createNest(vecs, comm=comm)
 
             H = PETSc.Mat().create(comm)
             H.setSizes([size, size])
