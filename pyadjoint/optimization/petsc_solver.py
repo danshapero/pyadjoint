@@ -5,35 +5,18 @@ from ..tape import no_annotations
 try:
     from petsc4py import PETSc
 
-    class PETScObjective:
-        def __init__(self, rf):
-            self.rf = rf
-
-        def formObjective(self, tao, x):
-            pass
-
-        def formGradient(self, tao, x, g):
-            pass
-
-        def formObjectiveGradient(self, tao, x, g):
-            pass
-
-        def formHessian(self, tao, x, H, HP):
-            pass
-
-
     class PETScSolver(OptimizationSolver):
         r"""Use PETSc TAO to solve the given optimisation problem."""
-
         def __init__(self, problem, parameters=None):
             OptimizationSolver.__init__(self, problem, parameters)
-            self._petsc_objective = PETScObjective(problem.reduced_functional)
             self._problem = problem
 
             # FIXME: Make the communicator adjustable
             comm = PETSc.COMM_SELF
 
             ps = [p.tape_value() for p in problem.reduced_functional.controls]
+            qs = [p.copy(deepcopy=True) for p in ps]
+
             with ExitStack() as stack:
                 # FIXME: This is specific to Firedrake probably
                 vecs = [stack.enter_context(p.dat.vec_ro) for p in ps]
@@ -49,13 +32,15 @@ try:
             H.setUp()
 
             tao = PETSc.TAO().create(comm)
-            tao.setObjective(self._petsc_objective.formObjective)
-            tao.setGradient(self._petsc_objective.formGradient, g)
-            tao.setHessian(self._petsc_objective.formHessian, H)
+            tao.setFromOptions()
+            tao.setObjective(self.formObjective)
+            tao.setGradient(self.formGradient, g)
+            tao.setHessian(self.formHessian, H)
             tao.setSolution(x)
 
             self._tao = tao
             self._solution = ps
+            self._work_function = qs
 
         @no_annotations
         def solve(self):
@@ -70,6 +55,26 @@ try:
                     pv.copy(xv)
 
             return self._problem.reduced_functional.controls.delist(ps)
+
+        def formObjective(self, tao, x):
+            x_subvecs = x.getNestSubVecs()
+            qs = self._work_function
+            with ExitStack() as stack:
+                q_subvecs = [stack.enter_context(q.dat.vec_wo) for q in qs]
+                for qv, xv in zip(q_subvecs, x_subvecs):
+                    qv.copy(xv)
+
+            return self.problem.reduced_functional(qs)
+
+        def formGradient(self, tao, x, g):
+            pass
+
+        def formObjectiveGradient(self, tao, x, g):
+            pass
+
+        def formHessian(self, tao, x, H, HP):
+            pass
+
 
 except ImportError:
 
