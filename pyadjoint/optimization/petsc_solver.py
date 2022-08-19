@@ -28,6 +28,7 @@ try:
         def __init__(self, problem, parameters=None):
             OptimizationSolver.__init__(self, problem, parameters)
             self._petsc_objective = PETScObjective(problem.reduced_functional)
+            self._problem = problem
 
             # FIXME: Make the communicator adjustable
             comm = PETSc.COMM_SELF
@@ -53,9 +54,22 @@ try:
             tao.setHessian(self._petsc_objective.formHessian, H)
             tao.setSolution(x)
 
+            self._tao = tao
+            self._solution = ps
+
         @no_annotations
         def solve(self):
-            raise NotImplementedError("Not quite baked yet sorry bruv")
+            self._tao.solve()
+            result = self._tao.getSolution()
+            result_subvecs = result.getNestSubVecs()
+
+            ps = self._solution
+            with ExitStack() as stack:
+                solution_subvecs = [stack.enter_context(p.dat.vec_wo) for p in ps]
+                for pv, xv in zip(solution_subvecs, result_subvecs):
+                    pv.copy(xv)
+
+            return self._problem.reduced_functional.controls.delist(ps)
 
 except ImportError:
 
