@@ -32,7 +32,8 @@ def _simple_helmholz_model(V, source):
     return u
 
 
-def test_simple_inversion():
+@pytest.mark.parametrize("solver", ["petsc", "scipy", "ROL"])
+def test_simple_inversion(solver):
     """Test inversion of source term in helmholze eqn."""
     mesh = UnitIntervalMesh(10)
     V = FunctionSpace(mesh, "CG", 1)
@@ -53,5 +54,11 @@ def test_simple_inversion():
     J = assemble(1e6 * (u - u_ref)**2*dx)
     rf = ReducedFunctional(J, c)
 
-    x = minimize(rf)
+    if solver == "scipy":
+        x = minimize(rf)
+    elif solver == "petsc":
+        problem = MinimizationProblem(rf)
+        solver = PETScSolver(problem)
+        x = solver.solve()
+
     assert_allclose(x.dat.data, source_ref.dat.data, rtol=1e-2)
