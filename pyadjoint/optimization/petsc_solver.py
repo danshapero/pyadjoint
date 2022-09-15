@@ -67,7 +67,21 @@ try:
             return self.problem.reduced_functional(qs)
 
         def formGradient(self, tao, x, g):
-            pass
+            # NOTE: There's sort of an impedance mismatch between the API that
+            # `ReducedFunctional` presents and the one that PETSc expects for
+            # this function. `ReducedFunctional` only calculates the derivative
+            # at the last supplied value of the controls, whereas this method
+            # expects to be able to supply any value of the controls. The ROL
+            # solver `update` method handles all the logic for this including
+            # rolling back to old values as need be. Do we need to reproduce
+            # that here and if so how?
+            x_subvecs = x.getNestSubVecs()
+            qs = self._work_function
+            with ExitStack() as stack:
+                q_subvecs = [stack.enter_context(q.dat.vec_wo) for q in qs]
+                for qv, xv in zip(q_subvecs, x_subvecs):
+                    # Miracle occurs...
+                    pass
 
         def formObjectiveGradient(self, tao, x, g):
             pass
